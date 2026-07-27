@@ -1,61 +1,58 @@
 import os
 import requests
-from playwright.sync_api import sync_playwright
 
-URL = "https://gtaglitches.com/afk-accounts"
+API_URL = "https://glitch-garage-api.speedsorcerer0.workers.dev/afk-presence"
 
 def obtener_cuentas():
+    r = requests.get(API_URL, timeout=20)
+    r.raise_for_status()
+
+    data = r.json()
+
     cuentas = []
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+    for cuenta in data.get("accounts", []):
+        if not cuenta.get("online", False):
+            continue
 
-        page.goto(URL, wait_until="networkidle")
-        page.wait_for_timeout(5000)
+        if cuenta.get("console") != "Xbox Series":
+            continue
 
-        texto = page.locator("body").inner_text()
+        nombre = cuenta.get("onlineId", "Desconocido")
+        aim = cuenta.get("aim", "Desconocido")
+        uptime = cuenta.get("uptimePct", 0)
+        banned = "🚫 Sí" if cuenta.get("banned") else "✅ No"
 
-        for linea in texto.splitlines():
-            linea = linea.strip()
+        cuentas.append(
+            f"• **{nombre}**\n"
+            f"  🎯 Aim: {aim}\n"
+            f"  📈 Uptime: {uptime}%\n"
+            f"  🚫 Baneada: {banned}\n"
+        )
 
-            if (
-                linea
-                and "ONLINE" not in linea
-                and "Xbox" not in linea
-                and "Grand Theft Auto V" not in linea
-                and "Assisted Aim" not in linea
-                and "Free Aim" not in linea
-                and len(linea) > 2
-            ):
-                if linea[0].isalnum():
-                    cuentas.append(linea)
-
-        browser.close()
-
-    # Quitar duplicados
-    resultado = []
-    for c in cuentas:
-        if c not in resultado:
-            resultado.append(c)
-
-    return resultado[:20]
+    return cuentas, data.get("updatedAt", "Desconocido")
 
 
-cuentas = obtener_cuentas()
+cuentas, actualizado = obtener_cuentas()
 
-mensaje = "🟢 **Cuentas AFK Online**\n\n"
+mensaje = "🟢 **CUENTAS AFK XBOX SERIES ONLINE**\n\n"
 
 if cuentas:
-    for cuenta in cuentas:
-        mensaje += f"• {cuenta}\n"
+    mensaje += "\n".join(cuentas)
 else:
-    mensaje += "No se encontraron cuentas."
+    mensaje += "❌ No hay cuentas Xbox Series online."
+
+mensaje += f"\n\n🕒 **Actualizado:** {actualizado}"
 
 webhook = os.getenv("DISCORD_WEBHOOK")
 
 if webhook:
-    requests.post(webhook, json={"content": mensaje})
-    print("Mensaje enviado a Discord.")
+    respuesta = requests.post(webhook, json={"content": mensaje})
+
+    if respuesta.status_code in (200, 204):
+        print("Mensaje enviado correctamente.")
+    else:
+        print(f"Error al enviar: {respuesta.status_code}")
+        print(respuesta.text)
 else:
-    print("No existe DISCORD_WEBHOOK.")
+    print("No existe la variable DISCORD_WEBHOOK.")
