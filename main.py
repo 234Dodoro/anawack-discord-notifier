@@ -1,31 +1,61 @@
 import os
 import requests
-from bs4 import BeautifulSoup
+from playwright.sync_api import sync_playwright
 
 URL = "https://gtaglitches.com/afk-accounts"
 
-headers = {
-    "User-Agent": "Mozilla/5.0"
-}
+def obtener_cuentas():
+    cuentas = []
 
-response = requests.get(URL, headers=headers)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-print("Estado:", response.status_code)
+        page.goto(URL, wait_until="networkidle")
+        page.wait_for_timeout(5000)
 
-soup = BeautifulSoup(response.text, "html.parser")
+        texto = page.locator("body").inner_text()
 
-titulo = soup.title.text if soup.title else "Sin título"
-print(titulo)
+        for linea in texto.splitlines():
+            linea = linea.strip()
 
-webhook_url = os.environ.get("DISCORD_WEBHOOK")
+            if (
+                linea
+                and "ONLINE" not in linea
+                and "Xbox" not in linea
+                and "Grand Theft Auto V" not in linea
+                and "Assisted Aim" not in linea
+                and "Free Aim" not in linea
+                and len(linea) > 2
+            ):
+                if linea[0].isalnum():
+                    cuentas.append(linea)
 
-if webhook_url:
-    mensaje = {
-        "content": f"🔔 Monitor AFK\nEstado: {response.status_code}\nTítulo: {titulo}"
-    }
+        browser.close()
 
-    resultado = requests.post(webhook_url, json=mensaje)
+    # Quitar duplicados
+    resultado = []
+    for c in cuentas:
+        if c not in resultado:
+            resultado.append(c)
 
-    print("Discord:", resultado.status_code)
+    return resultado[:20]
+
+
+cuentas = obtener_cuentas()
+
+mensaje = "🟢 **Cuentas AFK Online**\n\n"
+
+if cuentas:
+    for cuenta in cuentas:
+        mensaje += f"• {cuenta}\n"
 else:
-    print("❌ No se encontró DISCORD_WEBHOOK")
+    mensaje += "No se encontraron cuentas."
+
+webhook = os.getenv("DISCORD_WEBHOOK")
+
+if webhook:
+    requests.post(webhook, json={"content": mensaje})
+    print("Mensaje enviado a Discord.")
+else:
+    print("No existe DISCORD_WEBHOOK.")
