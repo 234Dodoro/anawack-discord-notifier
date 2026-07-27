@@ -1,8 +1,7 @@
-name: Monitor AFK Accounts
+name: Monitorear cuentas AFK
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: "*/5 * * * *"
 
@@ -22,8 +21,9 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install -r requirements.txt
-     - name: Ejecutar bot
-  env:
-    DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-  run: |
-    python main.py
+
+      - name: Bot detector
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          python main.py
