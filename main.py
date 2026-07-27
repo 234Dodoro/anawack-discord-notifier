@@ -1,7 +1,25 @@
 import os
+import json
 import requests
 
 API_URL = "https://glitch-garage-api.speedsorcerer0.workers.dev/afk-presence"
+STATE_FILE = "estado.json"
+
+
+def cargar_estado():
+    if os.path.exists(STATE_FILE):
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except:
+                return {"accounts": []}
+    return {"accounts": []}
+
+
+def guardar_estado(accounts):
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"accounts": accounts}, f, indent=2)
+
 
 def obtener_cuentas():
     r = requests.get(API_URL, timeout=20)
@@ -10,8 +28,10 @@ def obtener_cuentas():
     data = r.json()
 
     cuentas = []
+    ids = []
 
     for cuenta in data.get("accounts", []):
+
         if not cuenta.get("online", False):
             continue
 
@@ -23,36 +43,53 @@ def obtener_cuentas():
         uptime = cuenta.get("uptimePct", 0)
         banned = "🚫 Sí" if cuenta.get("banned") else "✅ No"
 
-        cuentas.append(
-            f"• **{nombre}**\n"
-            f"  🎯 Aim: {aim}\n"
-            f"  📈 Uptime: {uptime}%\n"
-            f"  🚫 Baneada: {banned}\n"
-        )
+        ids.append(nombre)
 
-    return cuentas, data.get("updatedAt", "Desconocido")
+        cuentas.append({
+            "id": nombre,
+            "mensaje":
+                f"🟢 **Nueva cuenta detectada**\n\n"
+                f"👤 **{nombre}**\n"
+                f"🎯 Aim: {aim}\n"
+                f"📈 Uptime: {uptime}%\n"
+                f"🚫 Baneada: {banned}"
+        })
+
+    return cuentas, ids
 
 
-cuentas, actualizado = obtener_cuentas()
+estado = cargar_estado()
+anteriores = set(estado.get("accounts", []))
 
-mensaje = "🟢 **CUENTAS AFK XBOX SERIES ONLINE**\n\n"
+cuentas, actuales = obtener_cuentas()
+actuales_set = set(actuales)
 
-if cuentas:
-    mensaje += "\n".join(cuentas)
-else:
-    mensaje += "❌ No hay cuentas Xbox Series online."
-
-mensaje += f"\n\n🕒 **Actualizado:** {actualizado}"
+nuevas = [c for c in cuentas if c["id"] not in anteriores]
+eliminadas = anteriores - actuales_set
 
 webhook = os.getenv("DISCORD_WEBHOOK")
 
 if webhook:
-    respuesta = requests.post(webhook, json={"content": mensaje})
 
-    if respuesta.status_code in (200, 204):
-        print("Mensaje enviado correctamente.")
+    # Avisar cuentas nuevas
+    for cuenta in nuevas:
+        requests.post(webhook, json={"content": cuenta["mensaje"]})
+
+    # Avisar cuentas eliminadas
+    for cuenta in eliminadas:
+        requests.post(
+            webhook,
+            json={
+                "content": f"🔴 **La cuenta ya no aparece online:**\n\n👤 **{cuenta}**"
+            }
+        )
+
+    if nuevas or eliminadas:
+        print("Cambios detectados.")
     else:
-        print(f"Error al enviar: {respuesta.status_code}")
-        print(respuesta.text)
+        print("No hubo cambios.")
+
 else:
     print("No existe la variable DISCORD_WEBHOOK.")
+
+guardar_estado(actuales)
