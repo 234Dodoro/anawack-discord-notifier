@@ -22,7 +22,8 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install -r requirements.txt
-
-      - name: Ejecutar bot
-        run: |
-          python main.py
+     - name: Ejecutar bot
+  env:
+    DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+  run: |
+    python main.py
