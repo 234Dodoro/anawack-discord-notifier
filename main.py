@@ -8,20 +8,31 @@ STATE_FILE = "estado.json"
 
 def cargar_estado():
     if os.path.exists(STATE_FILE):
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            try:
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-            except:
-                return {"accounts": []}
+        except Exception:
+            print("Error leyendo estado.json")
+            return {"accounts": []}
+
     return {"accounts": []}
 
 
 def guardar_estado(accounts):
     with open(STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"accounts": accounts}, f, indent=2)
+        json.dump(
+            {"accounts": accounts},
+            f,
+            indent=2,
+            ensure_ascii=False
+        )
+
+    print("Estado guardado correctamente.")
 
 
 def obtener_cuentas():
+    print("Consultando cuentas...")
+
     r = requests.get(API_URL, timeout=20)
     r.raise_for_status()
 
@@ -41,6 +52,7 @@ def obtener_cuentas():
         nombre = cuenta.get("onlineId", "Desconocido")
         aim = cuenta.get("aim", "Desconocido")
         uptime = cuenta.get("uptimePct", 0)
+
         banned = "🚫 Sí" if cuenta.get("banned") else "✅ No"
 
         ids.append(nombre)
@@ -55,41 +67,79 @@ def obtener_cuentas():
                 f"🚫 Baneada: {banned}"
         })
 
+    print(f"Cuentas online encontradas: {len(ids)}")
+
     return cuentas, ids
 
 
-estado = cargar_estado()
-anteriores = set(estado.get("accounts", []))
+def enviar_discord(mensaje):
+    webhook = os.getenv("DISCORD_WEBHOOK")
 
-cuentas, actuales = obtener_cuentas()
-actuales_set = set(actuales)
+    if not webhook:
+        print("ERROR: No existe DISCORD_WEBHOOK")
+        return
 
-nuevas = [c for c in cuentas if c["id"] not in anteriores]
-eliminadas = anteriores - actuales_set
-
-webhook = os.getenv("DISCORD_WEBHOOK")
-
-if webhook:
-
-    # Avisar cuentas nuevas
-    for cuenta in nuevas:
-        requests.post(webhook, json={"content": cuenta["mensaje"]})
-
-    # Avisar cuentas eliminadas
-    for cuenta in eliminadas:
-        requests.post(
+    try:
+        respuesta = requests.post(
             webhook,
-            json={
-                "content": f"🔴 **La cuenta ya no aparece online:**\n\n👤 **{cuenta}**"
-            }
+            json={"content": mensaje},
+            timeout=10
         )
 
-    if nuevas or eliminadas:
-        print("Cambios detectados.")
-    else:
-        print("No hubo cambios.")
+        print(
+            "Discord respuesta:",
+            respuesta.status_code
+        )
 
-else:
-    print("No existe la variable DISCORD_WEBHOOK.")
+        if respuesta.status_code not in [200, 204]:
+            print(respuesta.text)
+
+    except Exception as e:
+        print("Error enviando a Discord:", e)
+
+
+# -------- PROGRAMA PRINCIPAL --------
+
+estado = cargar_estado()
+
+anteriores = set(
+    estado.get("accounts", [])
+)
+
+print(
+    "Cuentas guardadas anteriormente:",
+    len(anteriores)
+)
+
+cuentas, actuales = obtener_cuentas()
+
+actuales_set = set(actuales)
+
+nuevas = [
+    c for c in cuentas
+    if c["id"] not in anteriores
+]
+
+eliminadas = anteriores - actuales_set
+
+
+print("Nuevas:", len(nuevas))
+print("Eliminadas:", len(eliminadas))
+
+
+for cuenta in nuevas:
+    enviar_discord(cuenta["mensaje"])
+
+
+for cuenta in eliminadas:
+    enviar_discord(
+        f"🔴 **La cuenta ya no aparece online:**\n\n"
+        f"👤 **{cuenta}**"
+    )
+
+
+if not nuevas and not eliminadas:
+    print("No hubo cambios.")
+
 
 guardar_estado(actuales)
